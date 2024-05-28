@@ -17,18 +17,21 @@ from .task import Task, TaskSettings
 from .cuedactiontask import CuedActionTask
 from .ssvep.task import SSVEPTask
 from .frequencymapper import FrequencyMapper, FrequencyMapperSettings
+from .reaction import ReactionTask
 
 
 class TaskDirectory(ez.Collection, TabbedApp):
 
     CAT = CuedActionTask()
     SSVEP  = SSVEPTask()
+    RXN = ReactionTask()
 
     @property
     def all_tasks(self) -> typing.List[Task]:
         return [
             self.CAT,
-            self.SSVEP
+            self.SSVEP,
+            self.RXN,
         ]
     
     SETTINGS: TaskSettings
