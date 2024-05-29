@@ -208,7 +208,7 @@ class ReactionTaskImplementation(TaskImplementation):
         sidebar.extend([
             pn.Card(
                 self.STATE.task_controls, 
-                title = 'Cued Action Task'
+                title = 'Reaction Task'
             )
         ])
         return sidebar
