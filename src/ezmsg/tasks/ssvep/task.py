@@ -3,7 +3,7 @@ import asyncio
 import datetime
 import random
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import ezmsg.core as ez
 import panel as pn
@@ -18,7 +18,7 @@ from ..task import (
     TaskImplementationState,
 )
 
-from .stimulus import RadialCheckerboard, Fixation
+from .stimulus import RadialCheckerboard, Fixation, Blank, MultiStimulus, Rotation
 
 @dataclass
 class SSVEPSampleTriggerMessage(SampleTriggerMessage):
@@ -30,6 +30,8 @@ class SSVEPTaskImplementationState(TaskImplementationState):
     task_area: pn.layout.Card
 
     classes: pn.widgets.MultiChoice
+    multiclass: pn.widgets.Checkbox
+    rotation: pn.widgets.Checkbox
 
     pre_run_duration: pn.widgets.FloatInput
     post_run_duration: pn.widgets.FloatInput
@@ -42,8 +44,10 @@ class SSVEPTaskImplementationState(TaskImplementationState):
     input_class: asyncio.Queue[typing.Optional[str]]
     output_class: asyncio.Queue[typing.Optional[str]]
 
-    stimulus_map: typing.Dict[str, RadialCheckerboard]
+    checker_map: typing.Dict[str, RadialCheckerboard]
+    rotation_map: typing.Dict[str, Rotation]
     fixation: Fixation
+    blank: Blank
 
 class SSVEPTaskImplementation(TaskImplementation):
     STATE: SSVEPTaskImplementationState
@@ -70,7 +74,7 @@ class SSVEPTaskImplementation(TaskImplementation):
                 pn.layout.VSpacer(),
                 self.STATE.stimulus,
                 pn.layout.VSpacer(),
-                min_height = 600
+                min_height = 700
             ),
             styles = {'background': '#808080'},
             hide_header = True,
@@ -80,11 +84,15 @@ class SSVEPTaskImplementation(TaskImplementation):
         sw = dict(sizing_mode = 'stretch_width')
         periods = ((np.arange(6) * 0.020) + 0.040)[::-1]
         freqs = [f'{(1.0/p):.02f} Hz' for p in periods]
-        stimulus_kwargs = dict(size = 500)
-        self.STATE.stimulus_map = {f: RadialCheckerboard(duration = p, **stimulus_kwargs) for f, p in zip(freqs, periods)}
+        stimulus_kwargs = dict(size = 300)
+        self.STATE.checker_map = {f: RadialCheckerboard(duration = p, **stimulus_kwargs) for f, p in zip(freqs, periods)}
+        self.STATE.rotation_map = {f: Rotation(duration = p, **stimulus_kwargs) for f, p in zip(freqs, periods)}
         self.STATE.fixation = Fixation(**stimulus_kwargs)
+        self.STATE.blank = Blank(**stimulus_kwargs)
 
         self.STATE.classes = pn.widgets.MultiChoice(name = 'Classes', options = freqs, max_items = 4, **sw)
+        self.STATE.multiclass = pn.widgets.Checkbox(name = 'Multiclass Presentation', value = False, **sw)
+        self.STATE.rotation = pn.widgets.Checkbox(name = 'Rotation (freq/15) Hz', value = False, **sw)
 
         self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Trials per-class', value = 10, start = 1, **sw)
         self.STATE.pre_run_duration = pn.widgets.FloatInput(name = 'Pre-run (sec)', value = 3, start = 0, **sw)
@@ -125,6 +133,8 @@ class SSVEPTaskImplementation(TaskImplementation):
 
         self.STATE.task_controls = pn.WidgetBox(
             self.STATE.classes,
+            self.STATE.multiclass,
+            self.STATE.rotation,
             pn.Row(
                 self.STATE.trials_per_class,
                 self.STATE.trial_duration,
@@ -166,8 +176,11 @@ class SSVEPTaskImplementation(TaskImplementation):
             iti_max: float = self.STATE.intertrial_max_dur.value # type: ignore
             pre_run_duration: float = self.STATE.pre_run_duration.value # type: ignore
             post_run_duration: float = self.STATE.post_run_duration.value # type: ignore
+            multiclass: bool = self.STATE.multiclass.value # type: ignore
+            rotation: bool = self.STATE.rotation.value # type: ignore
 
-            freqs = [1.0/self.STATE.stimulus_map[c].duration for c in classes]
+            stimulus_map = self.STATE.rotation_map if rotation else self.STATE.checker_map
+            freqs = [1.0/stimulus_map[c].duration for c in classes]
 
             # Create trial order (blockwise randomized)
             trials: typing.List[str] = []
@@ -193,15 +206,24 @@ class SSVEPTaskImplementation(TaskImplementation):
                 self.STATE.output_class.put_nowait(None)
                 await asyncio.sleep(iti)
 
-                stim = self.STATE.stimulus_map[trial_class]
+                stim = stimulus_map[trial_class]
+                duration = stim.duration
+                if multiclass:
+                    stim = replace(stim, border = 5)
+                    stim = MultiStimulus([
+                        v if k != trial_class else stim 
+                        for k, v in stimulus_map.items() 
+                        if k in classes
+                    ])
+
                 self.STATE.status.value = f'{trial_id}: Action ({trial_class})'
                 self.STATE.stimulus.object = stim
                 self.STATE.output_class.put_nowait(trial_class)
                 yield SSVEPSampleTriggerMessage(
                     period = (0.0, trial_dur), 
                     value = trial_class,
-                    expected_freq = 1.0 / stim.duration,
-                    freqs = freqs
+                    expected_freq = (15.0 if rotation else 1.0) / duration,
+                    freqs = [f/15.0 for f in freqs] if rotation else freqs
                 )
                 await asyncio.sleep(trial_dur)
                 self.STATE.progress.value = trial_idx + 1

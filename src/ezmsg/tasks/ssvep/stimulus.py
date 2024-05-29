@@ -1,3 +1,4 @@
+import typing
 import base64
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ class GIFStimulus:
 
     duration: float = 0.08 # frame duration
     size: int = 600 # px
+    border: typing.Optional[int] = None
     _src: str = field(init = False)
 
     def __post_init__(self) -> None:
@@ -43,8 +45,23 @@ class GIFStimulus:
     def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
         raise NotImplementedError
     
+    @property
+    def img(self) -> str:
+        border = f'border="{self.border}"' if self.border is not None else ''
+        return f'<img {border} src="{self._src}"/>'
+    
     def _repr_html_(self) -> str:
-        return f"""<center><img src="{self._src}"/></center>"""
+        return f'<center>{self.img}</center>'
+    
+@dataclass(frozen = True)
+class MultiStimulus:
+    
+    stimuli: typing.List[GIFStimulus]
+
+    def _repr_html_(self) -> str:
+        images = [s.img for s in self.stimuli]
+        return f"""<center>{''.join(images)}</center>"""
+
 
 
 @dataclass(frozen = True)
@@ -67,6 +84,17 @@ class RadialCheckerboard(GIFStimulus):
         ]
     
 @dataclass(frozen = True)
+class Rotation(GIFStimulus):
+
+    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
+        rotation_frames: int = 15
+        images = [np.ones_like(x) * 2**7 for _ in range(rotation_frames)]
+        for idx, image in enumerate(images):
+            w = (idx * 2 * np.pi) / rotation_frames
+            image[((x / np.abs(np.cos(w)))**2 + y**2) < 1.0] = int((np.cos(w) + 1.0) * (2**7-1))
+        return [i.astype(np.uint8) for i in images]
+    
+@dataclass(frozen = True)
 class Fixation(GIFStimulus):
     radius: float = 0.01 # fraction of image size
 
@@ -74,6 +102,13 @@ class Fixation(GIFStimulus):
         image = np.ones_like(x) * 2**7
         dist = np.sqrt(x**2 + y**2)
         image[np.where(dist < self.radius)] = 0
+        return [image.astype(np.uint8)]
+    
+@dataclass(frozen = True)
+class Blank(GIFStimulus):
+
+    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
+        image = np.ones_like(x) * 2**7
         return [image.astype(np.uint8)]
 
 
