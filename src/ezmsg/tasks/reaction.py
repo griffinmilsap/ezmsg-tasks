@@ -90,21 +90,25 @@ class ReactionTaskImplementation(TaskImplementation):
             ) 
             for direction in DIRECTIONS
         }
-            
-        layout = pn.layout.GridBox(
-            None,                                   self.STATE.direction_button['UP'],      None, 
-            self.STATE.direction_button['LEFT'],    self.STATE.button,                      self.STATE.direction_button['RIGHT'], 
-            None,                                   self.STATE.direction_button['DOWN'],    None, 
-            ncols = 3, nrows = 3, 
-            width = 600, height = 600
-        )
+
+        UP = self.STATE.direction_button['UP']
+        DOWN = self.STATE.direction_button['DOWN']
+        LEFT = self.STATE.direction_button['LEFT']
+        RIGHT = self.STATE.direction_button['RIGHT']
+        CENTER = self.STATE.button
 
         self.STATE.task_area = pn.Card(
             pn.Column(
                 pn.layout.VSpacer(),
                 pn.Row(
                     pn.layout.HSpacer(),
-                    layout,
+                    pn.layout.GridBox(
+                        None, UP,     None, 
+                        LEFT, CENTER, RIGHT, 
+                        None, DOWN,   None, 
+                        ncols = 3, nrows = 3, 
+                        width = 600, height = 600
+                    ),
                     pn.layout.HSpacer()
                 ),
                 pn.layout.VSpacer(),
