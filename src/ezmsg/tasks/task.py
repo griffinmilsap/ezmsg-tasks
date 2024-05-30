@@ -254,6 +254,7 @@ class Task(ez.Collection, Tab):
     LOGGER = MessageLogger()
 
     INPUT_TRIGGER = ez.InputStream(SampleTriggerMessage)
+    OUTPUT_TRIGGER = ez.OutputStream(SampleTriggerMessage)
     INPUT_SIGNAL = ez.InputStream(AxisArray)
     OUTPUT_SAMPLE = ez.OutputStream(SampleMessage)
 
@@ -280,6 +281,7 @@ class Task(ez.Collection, Tab):
             (self.INPUT_SIGNAL, self.SAMPLER.INPUT_SIGNAL),
             (self.INPUT_TRIGGER, self.SAMPLER.INPUT_TRIGGER),
             (self.TASK.OUTPUT_TRIGGER, self.SAMPLER.INPUT_TRIGGER),
+            (self.TASK.OUTPUT_TRIGGER, self.OUTPUT_TRIGGER),
             (self.SAMPLER.OUTPUT_SAMPLE, self.OUTPUT_SAMPLE),
 
             # Again, I really dislike this interface
