@@ -164,9 +164,14 @@ class TaskImplementation(ez.Unit, Tab):
             self.STATE.status.value = 'Idle'
             await self.STATE.run_event.wait()
 
+            # There seems to be a race condition bug in Panel. disabling the button then
+            # re-enabling it rapidly seems to cause a desynchronization between
+            # the browser and the panel server which requires a refresh in browser.
+            await asyncio.sleep(0.1)
+
+            self.STATE.recording_subdir.disabled = True
             self.STATE.run_button.name = 'Stop Run'
             self.STATE.run_button.disabled = False
-            self.STATE.recording_subdir.disabled = True
 
             recording_subdir: typing.Optional[str] = self.STATE.recording_subdir.value # type: ignore
 
@@ -207,6 +212,7 @@ class TaskImplementation(ez.Unit, Tab):
                 self.STATE.progress.bar_color = 'success'
 
             finally:
+                await asyncio.sleep(0.1) # Workaround for race condition in Panel - Griff
                 self.STATE.run_event.clear()
                 self.STATE.run_button.name = 'Start Run'
                 self.STATE.run_button.disabled = False
