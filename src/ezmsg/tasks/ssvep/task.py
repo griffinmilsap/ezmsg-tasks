@@ -22,8 +22,12 @@ from .stimulus import RadialCheckerboard, Fixation, Blank, MultiStimulus, Rotati
 
 @dataclass
 class SSVEPSampleTriggerMessage(SampleTriggerMessage):
-    expected_freq: typing.Optional[float] = None
-    freqs: typing.List[float] = field(default_factory = list)
+    reversal_period_ms: typing.List[int] = field(default_factory=list)
+    target: typing.Optional[int] = None
+
+    @property
+    def freqs(self) -> typing.List[float]:
+        return [1000.0 / p for p in self.reversal_period_ms]
 
 class SSVEPTaskImplementationState(TaskImplementationState):
     stimulus: pn.pane.HTML
@@ -82,11 +86,11 @@ class SSVEPTaskImplementation(TaskImplementation):
         )
 
         sw = dict(sizing_mode = 'stretch_width')
-        periods = ((np.arange(6) * 0.020) + 0.040)[::-1]
-        freqs = [f'{(1.0/p):.02f} Hz' for p in periods]
+        periods_ms = ((np.arange(6) * 20) + 40)[::-1]
+        freqs = [f'{(1000.0/p):.02f} Hz' for p in periods_ms]
         stimulus_kwargs = dict(size = 300)
-        self.STATE.checker_map = {f: RadialCheckerboard(duration = p, **stimulus_kwargs) for f, p in zip(freqs, periods)}
-        self.STATE.rotation_map = {f: Rotation(duration = p, **stimulus_kwargs) for f, p in zip(freqs, periods)}
+        self.STATE.checker_map = {f: RadialCheckerboard(duration_ms = p, **stimulus_kwargs) for f, p in zip(freqs, periods_ms)}
+        self.STATE.rotation_map = {f: Rotation(duration_ms = p, **stimulus_kwargs) for f, p in zip(freqs, periods_ms)}
         self.STATE.fixation = Fixation(**stimulus_kwargs)
         self.STATE.blank = Blank(**stimulus_kwargs)
 
@@ -180,7 +184,8 @@ class SSVEPTaskImplementation(TaskImplementation):
             rotation: bool = self.STATE.rotation.value # type: ignore
 
             stimulus_map = self.STATE.rotation_map if rotation else self.STATE.checker_map
-            freqs = [1.0/stimulus_map[c].duration for c in classes]
+            periods = [round(stimulus_map[c].duration_ms * (7.5 if rotation else 1)) for c in classes]
+            target_map = {c: periods.index(per) for c, per in zip(classes, periods)}
 
             # Create trial order (blockwise randomized)
             trials: typing.List[str] = []
@@ -207,7 +212,6 @@ class SSVEPTaskImplementation(TaskImplementation):
                 await asyncio.sleep(iti)
 
                 stim = stimulus_map[trial_class]
-                duration = stim.duration
                 if multiclass:
                     stim = replace(stim, border = 5)
                     stim = MultiStimulus([
@@ -222,8 +226,8 @@ class SSVEPTaskImplementation(TaskImplementation):
                 yield SSVEPSampleTriggerMessage(
                     period = (0.0, trial_dur), 
                     value = trial_class,
-                    expected_freq = (15.0 if rotation else 1.0) / duration,
-                    freqs = [f/15.0 for f in freqs] if rotation else freqs
+                    reversal_period_ms = periods,
+                    target = target_map[trial_class]
                 )
                 await asyncio.sleep(trial_dur)
                 self.STATE.progress.value = trial_idx + 1

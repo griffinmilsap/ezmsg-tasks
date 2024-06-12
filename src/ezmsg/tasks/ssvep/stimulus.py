@@ -17,7 +17,7 @@ class GIFStimulus:
     NOTE: very few browsers support 100 fps gifs (so avoid reversal period of 0.01 ms)
     """
 
-    duration: float = 0.08 # frame duration
+    duration_ms: float = 80 # frame duration in ms
     size: int = 600 # px
     border: typing.Optional[int] = None
     _src: str = field(init = False)
@@ -28,7 +28,7 @@ class GIFStimulus:
             ims = self.images(), 
             format = 'gif', # type: ignore
             loop = 0,
-            fps = int(1.0/self.duration),
+            fps = round(1000.0/self.duration_ms),
         )
 
         stim_b64 = base64.b64encode(stim_bytes).decode("ascii")

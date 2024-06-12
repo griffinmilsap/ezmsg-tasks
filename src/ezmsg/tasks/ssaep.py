@@ -58,6 +58,11 @@ class SSAEPStimulus:
         # Working around frozen dataclass for file caching
         object.__setattr__(self, '_file', file)
 
+@dataclass
+class SSAEPSampleTriggerMessage(SampleTriggerMessage):
+    freqs: typing.List[float] = field(default_factory=list)
+    target: typing.Optional[int] = None
+
 
 class SSAEPTaskImplementationState(TaskImplementationState):
     stimulus: SSAEPStimulus
@@ -205,6 +210,8 @@ class SSAEPTaskImplementation(TaskImplementation):
         try:
             # Grab all widget values so they can't be changed during run
             classes: typing.List[str] = ['⬅️ LEFT', 'RIGHT ➡️']
+            freqs = [self.STATE.stimulus.left_modulation, self.STATE.stimulus.right_modulation]
+            target_map = {c: idx for idx, c in enumerate(classes)}
             trials_per_class: int = self.STATE.trials_per_class.value # type: ignore
             trial_dur: float = self.STATE.trial_duration.value # type: ignore
             iti_min: float = self.STATE.intertrial_min_dur.value # type: ignore
@@ -242,9 +249,11 @@ class SSAEPTaskImplementation(TaskImplementation):
                 self.STATE.audio.time = 0 # Reset the audio to 0 sec
                 self.STATE.audio.muted = False
                 self.STATE.output_class.put_nowait(trial_class)
-                yield SampleTriggerMessage(
+                yield SSAEPSampleTriggerMessage(
                     period = (0.0, trial_dur), 
-                    value = trial_class
+                    value = trial_class,
+                    freqs = freqs,
+                    target = target_map[trial_class]
                 )
                 await asyncio.sleep(trial_dur)
                 self.STATE.progress.value = trial_idx + 1
