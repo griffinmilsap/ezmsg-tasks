@@ -20,6 +20,10 @@ from ..task import (
 
 from .stimulus import RadialCheckerboard, Fixation, Blank, MultiStimulus, Rotation
 
+from ..frequencydecodemessage import FrequencyDecodeMessage
+
+STIMULUS_KWARGS = dict(size = 300)
+
 @dataclass
 class SSVEPSampleTriggerMessage(SampleTriggerMessage):
     reversal_period_ms: typing.List[int] = field(default_factory=list)
@@ -37,6 +41,7 @@ class SSVEPTaskImplementationState(TaskImplementationState):
     multiclass: pn.widgets.Checkbox
     rotation: pn.widgets.Checkbox
 
+    feedback: pn.widgets.Checkbox
     pre_run_duration: pn.widgets.FloatInput
     post_run_duration: pn.widgets.FloatInput
     trials_per_class: pn.widgets.IntInput
@@ -45,7 +50,7 @@ class SSVEPTaskImplementationState(TaskImplementationState):
     intertrial_max_dur: pn.widgets.FloatInput
     task_controls: pn.layout.WidgetBox
 
-    input_class: asyncio.Queue[typing.Optional[str]]
+    input_decode: asyncio.Queue[FrequencyDecodeMessage]
     output_class: asyncio.Queue[typing.Optional[str]]
 
     checker_map: typing.Dict[str, RadialCheckerboard]
@@ -56,7 +61,7 @@ class SSVEPTaskImplementationState(TaskImplementationState):
 class SSVEPTaskImplementation(TaskImplementation):
     STATE: SSVEPTaskImplementationState
 
-    INPUT_CLASS = ez.InputStream(typing.Optional[str])
+    INPUT_DECODE = ez.InputStream(FrequencyDecodeMessage)
     OUTPUT_TARGET_CLASS = ez.OutputStream(typing.Optional[str])
     
     @property
@@ -88,17 +93,17 @@ class SSVEPTaskImplementation(TaskImplementation):
         sw = dict(sizing_mode = 'stretch_width')
         periods_ms = ((np.arange(6) * 20) + 40)[::-1]
         freqs = [f'{(1000.0/p):.02f} Hz' for p in periods_ms]
-        stimulus_kwargs = dict(size = 300)
-        self.STATE.checker_map = {f: RadialCheckerboard(duration_ms = p, **stimulus_kwargs) for f, p in zip(freqs, periods_ms)}
-        self.STATE.rotation_map = {f: Rotation(duration_ms = p, **stimulus_kwargs) for f, p in zip(freqs, periods_ms)}
-        self.STATE.fixation = Fixation(**stimulus_kwargs)
-        self.STATE.blank = Blank(**stimulus_kwargs)
+        self.STATE.checker_map = {f: RadialCheckerboard(duration_ms = p, **STIMULUS_KWARGS) for f, p in zip(freqs, periods_ms)}
+        self.STATE.rotation_map = {f: Rotation(duration_ms = p, **STIMULUS_KWARGS) for f, p in zip(freqs, periods_ms)}
+        self.STATE.fixation = Fixation(**STIMULUS_KWARGS)
+        self.STATE.blank = Blank(**STIMULUS_KWARGS)
 
         self.STATE.classes = pn.widgets.MultiChoice(name = 'Classes', options = freqs, max_items = 4, **sw)
         self.STATE.multiclass = pn.widgets.Checkbox(name = 'Multiclass Presentation', value = False, **sw)
         self.STATE.rotation = pn.widgets.Checkbox(name = 'Rotation (freq/15) Hz', value = False, **sw)
 
         self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Trials per-class', value = 10, start = 1, **sw)
+        self.STATE.feedback = pn.widgets.Checkbox(name = 'Display Feedback', value = False, **sw)
         self.STATE.pre_run_duration = pn.widgets.FloatInput(name = 'Pre-run (sec)', value = 3, start = 0, **sw)
         self.STATE.post_run_duration = pn.widgets.FloatInput(name = 'Post-run (sec)', value = 3, start = 0, **sw)
 
@@ -139,6 +144,7 @@ class SSVEPTaskImplementation(TaskImplementation):
             self.STATE.classes,
             self.STATE.multiclass,
             self.STATE.rotation,
+            self.STATE.feedback,
             pn.Row(
                 self.STATE.trials_per_class,
                 self.STATE.trial_duration,
@@ -155,11 +161,11 @@ class SSVEPTaskImplementation(TaskImplementation):
         )
 
         self.STATE.output_class = asyncio.Queue()
-        self.STATE.input_class = asyncio.Queue()
+        self.STATE.input_decode = asyncio.Queue()
     
-    @ez.subscriber(INPUT_CLASS)
-    async def on_class_input(self, msg: typing.Optional[str]) -> None:
-        self.STATE.input_class.put_nowait(msg)
+    @ez.subscriber(INPUT_DECODE)
+    async def on_class_input(self, msg: FrequencyDecodeMessage) -> None:
+        self.STATE.input_decode.put_nowait(msg)
 
     @ez.publisher(OUTPUT_TARGET_CLASS)
     async def output_class(self) -> typing.AsyncGenerator:
@@ -176,6 +182,7 @@ class SSVEPTaskImplementation(TaskImplementation):
             classes: typing.List[str] = self.STATE.classes.value # type: ignore
             trials_per_class: int = self.STATE.trials_per_class.value # type: ignore
             trial_dur: float = self.STATE.trial_duration.value # type: ignore
+            feedback: bool = self.STATE.feedback.value # type: ignore
             iti_min: float = self.STATE.intertrial_min_dur.value # type: ignore
             iti_max: float = self.STATE.intertrial_max_dur.value # type: ignore
             pre_run_duration: float = self.STATE.pre_run_duration.value # type: ignore
@@ -200,6 +207,7 @@ class SSVEPTaskImplementation(TaskImplementation):
 
             self.STATE.status.value = 'Pre Run'
             await asyncio.sleep(pre_run_duration)
+            self.STATE.input_decode = asyncio.Queue() # clear out the decode queue
 
             for trial_idx, trial_class in enumerate(trials):
 
@@ -230,6 +238,35 @@ class SSVEPTaskImplementation(TaskImplementation):
                     target = target_map[trial_class]
                 )
                 await asyncio.sleep(trial_dur)
+
+                self.STATE.stimulus.object = self.STATE.fixation
+
+                # Deliver Feedback
+                if feedback:
+                    await asyncio.sleep(0.5)
+
+                    # TODO: Timeout on decode
+                    decode = await self.STATE.input_decode.get()
+                    focus_idx = np.argmax(decode.data).item()
+                    focus_per = round(1000.0 / decode.freqs[focus_idx])
+                    correct = focus_per == stimulus_map[trial_class].duration_ms
+
+                    if multiclass:
+                        self.STATE.stimulus.object = MultiStimulus([
+                            Blank(
+                                border = 5 if i == focus_idx else None, 
+                                **STIMULUS_KWARGS
+                            )
+                            for i in range(len(decode.freqs))
+                        ])
+                    else:
+                        self.STATE.stimulus.object = Blank(
+                            border = 5 if correct else 0,
+                            **STIMULUS_KWARGS
+                        )
+
+                    await asyncio.sleep(0.5)                   
+                
                 self.STATE.progress.value = trial_idx + 1
 
             self.STATE.status.value = 'Post Run'
@@ -258,14 +295,14 @@ class SSVEPTaskImplementation(TaskImplementation):
 
 
 class SSVEPTask(Task):
-    INPUT_CLASS = ez.InputStream(typing.Optional[str])
+    INPUT_DECODE = ez.InputStream(FrequencyDecodeMessage)
     OUTPUT_TARGET_CLASS = ez.OutputStream(typing.Optional[str])
 
     TASK: SSVEPTaskImplementation = SSVEPTaskImplementation()
 
     def network(self) -> ez.NetworkDefinition:
         return list(super().network()) + [
-            (self.INPUT_CLASS, self.TASK.INPUT_CLASS),
+            (self.INPUT_DECODE, self.TASK.INPUT_DECODE),
             (self.TASK.OUTPUT_TARGET_CLASS, self.OUTPUT_TARGET_CLASS)
         ]
     
