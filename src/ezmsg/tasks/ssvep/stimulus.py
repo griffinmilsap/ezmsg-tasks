@@ -13,11 +13,11 @@ from typing import List
 class GIFStimulus:
     """
     gif is a pretty limiting format; only supports integer multiples of 10ms frame periods
-    stick to reversal durations that are integer multiples of 0.01 ms > 0.02 ms
-    NOTE: very few browsers support 100 fps gifs (so avoid reversal period of 0.01 ms)
+    stick to reversal durations that are integer multiples of 10 ms > 20 ms
+    NOTE: very few browsers support 100 fps gifs (so avoid reversal period of 10 ms)
     """
 
-    duration_ms: float = 80 # frame duration in ms
+    duration_ms: int = 80 # frame duration in ms
     size: int = 600 # px
     border: typing.Optional[int] = None
     _src: str = field(init = False)
@@ -28,7 +28,7 @@ class GIFStimulus:
             ims = self.images(), 
             format = 'gif', # type: ignore
             loop = 0,
-            fps = round(1000.0/self.duration_ms),
+            duration = self.duration_ms,
         )
 
         stim_b64 = base64.b64encode(stim_bytes).decode("ascii")
