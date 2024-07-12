@@ -191,7 +191,7 @@ class SSVEPTaskImplementation(TaskImplementation):
             rotation: bool = self.STATE.rotation.value # type: ignore
 
             stimulus_map = self.STATE.rotation_map if rotation else self.STATE.checker_map
-            periods = [round(stimulus_map[c].duration_ms * (7.5 if rotation else 1)) for c in classes]
+            periods = [stimulus_map[c].duration_ms for c in classes]
             target_map = {c: periods.index(per) for c, per in zip(classes, periods)}
 
             # Create trial order (blockwise randomized)
@@ -218,6 +218,17 @@ class SSVEPTaskImplementation(TaskImplementation):
                 self.STATE.stimulus.object = self.STATE.fixation
                 self.STATE.output_class.put_nowait(None)
                 await asyncio.sleep(iti)
+
+                if multiclass:
+                    self.STATE.stimulus.object = MultiStimulus([
+                        Blank(
+                            border = 5 if k == trial_class else None, 
+                            **STIMULUS_KWARGS
+                        )
+                        for k in stimulus_map.keys() 
+                        if k in classes
+                    ])
+                    await asyncio.sleep(1.0)
 
                 stim = stimulus_map[trial_class]
                 if multiclass:
@@ -250,14 +261,16 @@ class SSVEPTaskImplementation(TaskImplementation):
                     focus_idx = np.argmax(decode.data).item()
                     focus_per = round(1000.0 / decode.freqs[focus_idx])
                     correct = focus_per == stimulus_map[trial_class].duration_ms
+                    ez.logger.info(f'{trial_class=}, {decode=}, {correct=}')
 
                     if multiclass:
                         self.STATE.stimulus.object = MultiStimulus([
                             Blank(
-                                border = 5 if i == focus_idx else None, 
+                                border = 5 if focus_per == v.duration_ms else None, 
                                 **STIMULUS_KWARGS
                             )
-                            for i in range(len(decode.freqs))
+                            for k, v in stimulus_map.items() 
+                            if k in classes
                         ])
                     else:
                         self.STATE.stimulus.object = Blank(
