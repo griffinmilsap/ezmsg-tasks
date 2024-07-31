@@ -1,115 +1,145 @@
-import typing
-import base64
+import param
 
-from dataclasses import dataclass, field
+from panel.reactive import ReactiveHTML
 
-import imageio
-import numpy as np
-import numpy.typing as npt
+class CanvasStimulus(ReactiveHTML):
 
-from typing import List
+    border = param.Integer(default = 0)
+    presented = param.Boolean(default = True)
 
-@dataclass(frozen = True)
-class GIFStimulus:
+    _template = """
+    <canvas 
+        id="stimulus_el"
+        width="${model.width}"
+        height="${model.height}"
+        style="border: ${border}px solid black;"
+        >
+    </canvas>
     """
-    gif is a pretty limiting format; only supports integer multiples of 10ms frame periods
-    stick to reversal durations that are integer multiples of 10 ms > 20 ms
-    NOTE: very few browsers support 100 fps gifs (so avoid reversal period of 10 ms)
-    """
 
-    duration_ms: int = 80 # frame duration in ms
-    size: int = 600 # px
-    border: typing.Optional[int] = None
-    _src: str = field(init = False)
+class SSVEPStimulus(CanvasStimulus):
 
-    def __post_init__(self) -> None:
-        stim_bytes = imageio.mimwrite(
-            '<bytes>',
-            ims = self.images(), 
-            format = 'gif', # type: ignore
-            loop = 0,
-            duration = self.duration_ms,
-        )
+    period_ms = param.Integer(default = 120)
+    angular_freq = param.Number(default = 40.0)
+    radial_freq = param.Number(default = 10.0)
+    radial_exp = param.Number(default = 0.5)
 
-        stim_b64 = base64.b64encode(stim_bytes).decode("ascii")
+    _scripts = {
+        "render": """
+            state.ctx = stimulus_el.getContext("2d");
+            state.interval_id = null;
+            state.period = -1;
+        """,
 
-        # Working around frozen dataclass for image caching
-        object.__setattr__(self, '_src', f'data:image/gif;base64,{stim_b64}')
-    
-    def images(self) -> List[npt.NDArray[np.uint8]]:
-        half = self.size / 2.0
-        px = (np.arange(self.size) - half) / half
-        x, y = np.meshgrid(px, px)
-        return self.design(x, y)
+        "after_layout": """
+            self.design_stimulus();
+            self.reschedule();
+        """,
 
-    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
-        raise NotImplementedError
-    
-    @property
-    def img(self) -> str:
-        border = f'border="{self.border}"' if self.border is not None else ''
-        return f'<img {border} src="{self._src}"/>'
-    
-    def _repr_html_(self) -> str:
-        return f'<center>{self.img}</center>'
-    
-@dataclass(frozen = True)
-class MultiStimulus:
-    
-    stimuli: typing.List[GIFStimulus]
+        "remove": """
+            self.clear_interval()
+        """,
 
-    def _repr_html_(self) -> str:
-        images = [s.img for s in self.stimuli]
-        return f"""<center>{''.join(images)}</center>"""
+        "clear_interval": """
+            if(state.interval_id) {
+                window.clearInterval(state.interval_id);
+            }
+        """,
 
+        "reschedule": """
+            self.clear_interval();
+            state.period = data.period_ms;
+            state.interval_id = window.setInterval(self.draw, state.period);
+        """,
 
+        "design_stimulus": """
+            state.width = stimulus_el.width;
+            state.height = stimulus_el.height;
+            state.ctx.clearRect(0, 0, state.width, state.height);
 
-@dataclass(frozen = True)
-class RadialCheckerboard(GIFStimulus):
-    angular_freq: float = 40.0 # number of checkers around circle
-    radial_freq: float = 10.0 # number of checkers to center
-    radial_exp: float = 0.5 # warp factor for checker length to center
+            // Assumption: state.id_a.data and state.id_b.data have the same length
+            state.id_a = state.ctx.getImageData(0, 0, state.width, state.height);
+            state.id_b = state.ctx.getImageData(0, 0, state.width, state.height);
 
-    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
-        dist = np.sqrt(x**2 + y**2) ** self.radial_exp
-        angle = np.arctan2(y,x)
-        image = np.sin(2 * np.pi * (self.radial_freq / 2.0) * dist)
-        image *= np.cos(angle * self.angular_freq / 2.0)
-        image = np.sign(image)
-        image[np.where(dist > 1.0)] = 0
-        scale = lambda x: (x + 1.0) * ((2**7) - 1)
-        return [
-            scale(image).astype(np.uint8), 
-            scale(image * -1).astype(np.uint8)
-        ]
-    
-@dataclass(frozen = True)
-class Rotation(GIFStimulus):
+            cx = state.width / 2.0;
+            cy = state.height / 2.0;
 
-    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
-        rotation_frames: int = 15
-        images = [np.ones_like(x) * 2**7 for _ in range(rotation_frames)]
-        for idx, image in enumerate(images):
-            w = (idx * 2 * np.pi) / rotation_frames
-            image[((x / np.abs(np.cos(w)))**2 + y**2) < 1.0] = int((np.cos(w) + 1.0) * (2**7-1))
-        return [i.astype(np.uint8) for i in images]
-    
-@dataclass(frozen = True)
-class Fixation(GIFStimulus):
-    radius: float = 0.01 # fraction of image size
+            for(let offset = 0; offset < state.id_a.data.length; offset += 4) {
+                pixel_idx = Math.floor(offset / 4);
+                x = pixel_idx % state.width;
+                y = Math.floor(pixel_idx / state.width);
 
-    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
-        image = np.ones_like(x) * 2**7
-        dist = np.sqrt(x**2 + y**2)
-        image[np.where(dist < self.radius)] = 0
-        return [image.astype(np.uint8)]
-    
-@dataclass(frozen = True)
-class Blank(GIFStimulus):
+                xv = (x - cx) / cx;
+                yv = (y - cy) / cy;
 
-    def design(self, x: npt.NDArray, y: npt.NDArray) -> List[npt.NDArray[np.uint8]]:
-        image = np.ones_like(x) * 2**7
-        return [image.astype(np.uint8)]
+                dist = Math.pow(Math.sqrt((xv * xv) + (yv * yv)), data.radial_exp);
+                angle = Math.atan2(yv, xv);
+                value = Math.sin(2 * Math.PI * (data.radial_freq / 2.0) * dist);
+                value *= Math.cos(angle * data.angular_freq / 2.0);
 
+                if(dist <= 1.0){
+                    state.id_a.data[offset + 0] = value <= 0 ? 0 : 255;
+                    state.id_b.data[offset + 0] = value <= 0 ? 255 : 0;
+                    state.id_a.data[offset + 1] = value <= 0 ? 0 : 255;
+                    state.id_b.data[offset + 1] = value <= 0 ? 255 : 0;
+                    state.id_a.data[offset + 2] = value <= 0 ? 0 : 255;
+                    state.id_b.data[offset + 2] = value <= 0 ? 255 : 0;
+                    state.id_a.data[offset + 3] = 255;
+                    state.id_b.data[offset + 3] = 255;
+                }
+            }
 
+            state.reverse = false
+        """,
 
+        "draw": """
+            state.ctx.clearRect(0, 0, state.width, state.height);
+            if(data.presented) {
+                state.ctx.putImageData(state.reverse ? state.id_a : state.id_b, 0, 0);
+            }
+            state.reverse = !state.reverse
+        """
+    }
+
+class VisualMotionStimulus(CanvasStimulus):
+
+    # For compatibility with SSVEPStimulus where period_ms represents single reversal period
+    # this actually refers to the half-rotation period
+    period_ms = param.Integer(default = 120)
+
+    _scripts = {
+        "render": """
+            state.ctx = stimulus_el.getContext("2d");
+            state.requestId = window.requestAnimationFrame(self.draw)
+        """,
+
+        "draw": """
+            state.ctx.clearRect(0, 0, stimulus_el.width, stimulus_el.height);
+            if(data.presented) {
+                cx = Math.floor(stimulus_el.width / 2);
+                cy = Math.floor(stimulus_el.height / 2);
+
+                const date = new Date();
+                t = date.getTime() / 1000;
+                f = 1000 / (2.0 * data.period_ms); // period corresponds to a half-rotation
+                w = 2 * Math.PI * f * t;
+                v = Math.sin(w);
+                radius_x = Math.floor(cx * Math.abs(v)); // pixels
+                radius_y = cy; // pixels
+                rotation = 0; // pixels
+                start_angle = 0; // radians
+                end_angle = 2 * Math.PI; // radians
+
+                state.ctx.beginPath()
+                lum = Math.floor(((v + 1.0) / 2.0) * 255);
+                state.ctx.fillStyle = `rgb(${lum}, ${lum}, ${lum})`;
+                state.ctx.ellipse(cx, cy, radius_x, radius_y, rotation, start_angle, end_angle)
+                state.ctx.fill()
+            }
+            state.requestId = window.requestAnimationFrame(self.draw)
+        """,
+
+        "remove": """
+            window.cancelAnimationFrame(state.requestId)
+        """,
+    }
