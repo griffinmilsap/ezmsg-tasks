@@ -57,7 +57,7 @@ class TaskImplementation(ez.Unit, Tab):
     # Task implementations should NOT have derived settings
     # This should be a reasonable ask because we will have UI for such things
 
-    SETTINGS: TaskSettings
+    SETTINGS = TaskSettings
     STATE: TaskImplementationState
 
     OUTPUT_TRIGGER = ez.OutputStream(SampleTriggerMessage)
@@ -247,7 +247,7 @@ class TaskImplementation(ez.Unit, Tab):
     
 class Task(ez.Collection, Tab):
 
-    SETTINGS: TaskSettings
+    SETTINGS = TaskSettings
 
     TASK: TaskImplementation
     SAMPLER = Sampler()

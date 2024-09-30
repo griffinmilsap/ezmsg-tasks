@@ -37,7 +37,7 @@ class TaskDirectory(ez.Collection, TabbedApp):
             self.SSAEP
         ]
     
-    SETTINGS: TaskSettings
+    SETTINGS = TaskSettings
 
     SOURCE_PLOT = TimeSeriesPlot()
 

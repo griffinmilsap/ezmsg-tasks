@@ -18,7 +18,7 @@ from ..task import (
     TaskImplementationState,
 )
 
-from .stimulus import SSVEPStimulus, VisualMotionStimulus
+from .stimulus import SSVEPStimulus, VisualMotionStimulus, IntermodulationSSVEP
 
 from ..frequencydecodemessage import FrequencyDecodeMessage
 
@@ -211,7 +211,7 @@ class SSVEPTaskImplementation(TaskImplementation):
                 await asyncio.sleep(iti)
 
                 stimuli = [
-                    (VisualMotionStimulus if rotation else SSVEPStimulus)(
+                    (IntermodulationSSVEP if rotation else SSVEPStimulus)(
                         period_ms = self.STATE.period_dict[c], 
                         width = stimulus_size, 
                         height = stimulus_size,

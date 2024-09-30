@@ -10,7 +10,7 @@ class FrequencyMapperSettings(ez.Settings):
 
 
 class FrequencyMapper(ez.Unit):
-    SETTINGS: FrequencyMapperSettings
+    SETTINGS = FrequencyMapperSettings
 
     INPUT_CLASS = ez.InputStream(typing.Optional[str])
     OUTPUT_FREQUENCY = ez.OutputStream(typing.Optional[float])

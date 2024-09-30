@@ -143,3 +143,45 @@ class VisualMotionStimulus(CanvasStimulus):
             window.cancelAnimationFrame(state.requestId)
         """,
     }
+
+class IntermodulationSSVEP(CanvasStimulus):
+
+    # For compatibility with SSVEPStimulus where period_ms represents single reversal period
+    # this actually refers to the half-rotation period
+    period_ms = param.Integer(default = 70)
+    period_ms_2 = param.Integer(default = 90)
+
+    _scripts = {
+        "render": """
+            state.ctx = stimulus_el.getContext("2d");
+            state.requestId = window.requestAnimationFrame(self.draw)
+        """,
+
+        "draw": """
+            state.ctx.clearRect(0, 0, stimulus_el.width, stimulus_el.height);
+            if(data.presented) {
+                cx = Math.floor(stimulus_el.width / 2);
+                cy = Math.floor(stimulus_el.height / 2);
+
+                const date = new Date();
+                t = date.getTime() / 1000;
+                w1 = 2 * Math.PI * 1000 / (2.0 * data.period_ms) * t;
+                w2 = 2 * Math.PI * 1000 / (2.0 * data.period_ms_2) * t;
+                v = (Math.cos(w1) + Math.cos(w2))/2;
+                rotation = 0; // pixels
+                start_angle = 0; // radians
+                end_angle = 2 * Math.PI; // radians
+
+                state.ctx.beginPath()
+                lum = Math.floor(((v + 1.0) / 2.0) * 255);
+                state.ctx.fillStyle = `rgb(${lum}, ${lum}, ${lum})`;
+                state.ctx.ellipse(cx, cy, cx, cy, rotation, start_angle, end_angle)
+                state.ctx.fill()
+            }
+            state.requestId = window.requestAnimationFrame(self.draw)
+        """,
+
+        "remove": """
+            window.cancelAnimationFrame(state.requestId)
+        """,
+    }
