@@ -25,7 +25,7 @@ class FeedbackTaskImplementationState(TaskImplementationState):
     input_class: asyncio.Queue[typing.Optional[str]]
 
 class FeedbackTaskImplementation(TaskImplementation):
-    STATE: FeedbackTaskImplementationState
+    STATE = FeedbackTaskImplementationState
 
     INPUT_CLASS = ez.InputStream(typing.Optional[str])
     

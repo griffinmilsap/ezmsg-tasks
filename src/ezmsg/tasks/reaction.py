@@ -53,7 +53,7 @@ class ReactionTaskImplementationState(TaskImplementationState):
     direction_button: typing.Dict[str, AsyncButton]
 
 class ReactionTaskImplementation(TaskImplementation):
-    STATE: ReactionTaskImplementationState
+    STATE = ReactionTaskImplementationState
 
     INPUT_DECODE = ez.InputStream(str)
     

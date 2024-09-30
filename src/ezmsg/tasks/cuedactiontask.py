@@ -40,7 +40,7 @@ class CuedActionTaskImplementationState(TaskImplementationState):
     output_class: asyncio.Queue[typing.Optional[str]]
 
 class CuedActionTaskImplementation(TaskImplementation):
-    STATE: CuedActionTaskImplementationState
+    STATE = CuedActionTaskImplementationState
 
     INPUT_CLASS = ez.InputStream(typing.Optional[str])
     OUTPUT_TARGET_CLASS = ez.OutputStream(typing.Optional[str])

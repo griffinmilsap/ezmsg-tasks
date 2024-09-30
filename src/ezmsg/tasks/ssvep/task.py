@@ -56,7 +56,7 @@ class SSVEPTaskImplementationState(TaskImplementationState):
     output_class: asyncio.Queue[typing.Optional[str]]
 
 class SSVEPTaskImplementation(TaskImplementation):
-    STATE: SSVEPTaskImplementationState
+    STATE = SSVEPTaskImplementationState
 
     INPUT_DECODE = ez.InputStream(FrequencyDecodeMessage)
     OUTPUT_TARGET_CLASS = ez.OutputStream(typing.Optional[str])

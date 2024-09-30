@@ -58,7 +58,7 @@ class TaskImplementation(ez.Unit, Tab):
     # This should be a reasonable ask because we will have UI for such things
 
     SETTINGS = TaskSettings
-    STATE: TaskImplementationState
+    STATE = TaskImplementationState
 
     OUTPUT_TRIGGER = ez.OutputStream(SampleTriggerMessage)
 

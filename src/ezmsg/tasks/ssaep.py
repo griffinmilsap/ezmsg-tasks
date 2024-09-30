@@ -81,7 +81,7 @@ class SSAEPTaskImplementationState(TaskImplementationState):
     output_class: asyncio.Queue[typing.Optional[str]]
 
 class SSAEPTaskImplementation(TaskImplementation):
-    STATE: SSAEPTaskImplementationState
+    STATE = SSAEPTaskImplementationState
 
     INPUT_CLASS = ez.InputStream(typing.Optional[str])
     OUTPUT_TARGET_CLASS = ez.OutputStream(typing.Optional[str])
