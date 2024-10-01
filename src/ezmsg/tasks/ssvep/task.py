@@ -211,7 +211,7 @@ class SSVEPTaskImplementation(TaskImplementation):
                 await asyncio.sleep(iti)
 
                 stimuli = [
-                    (IntermodulationSSVEP if rotation else SSVEPStimulus)(
+                    (VisualMotionStimulus if rotation else SSVEPStimulus)(
                         period_ms = self.STATE.period_dict[c], 
                         width = stimulus_size, 
                         height = stimulus_size,
