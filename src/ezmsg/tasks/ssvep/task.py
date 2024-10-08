@@ -39,7 +39,8 @@ class SSVEPTaskImplementationState(TaskImplementationState):
 
     classes: pn.widgets.MultiChoice
     multiclass: pn.widgets.Checkbox
-    rotation: pn.widgets.Checkbox
+    #rotation: pn.widgets.Checkbox
+    stimulus_type: pn.widgets.Select
     stimulus_size: pn.widgets.IntInput
 
     feedback: pn.widgets.Checkbox
@@ -92,7 +93,8 @@ class SSVEPTaskImplementation(TaskImplementation):
         self.STATE.period_dict = {f'{(1000.0/p):.02f} Hz': p for p in periods_ms}
         self.STATE.classes = pn.widgets.MultiChoice(name = 'Classes', options = list(self.STATE.period_dict.keys()), max_items = 4, **sw)
         self.STATE.multiclass = pn.widgets.Checkbox(name = 'Multiclass Presentation', value = False, **sw)
-        self.STATE.rotation = pn.widgets.Checkbox(name = 'Rotation', value = False, **sw)
+        #self.STATE.rotation = pn.widgets.Checkbox(name = 'Rotation', value = False, **sw)
+        self.STATE.stimulus_type = pn.widgets.Select(name='Stimulus Type', options=['Checkerboard', 'Visual Motion', 'Intermodulation'])
         self.STATE.stimulus_size = pn.widgets.IntInput(name = 'Stimulus Size (pixels)', value = 200, start = 10, **sw)
 
         self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Trials per-class', value = 10, start = 1, **sw)
@@ -137,7 +139,8 @@ class SSVEPTaskImplementation(TaskImplementation):
             self.STATE.classes,
             self.STATE.stimulus_size,
             self.STATE.multiclass,
-            self.STATE.rotation,
+            #self.STATE.rotation,
+            self.STATE.stimulus_type,
             self.STATE.feedback,
             pn.Row(
                 self.STATE.trials_per_class,
@@ -183,7 +186,8 @@ class SSVEPTaskImplementation(TaskImplementation):
             pre_run_duration: float = self.STATE.pre_run_duration.value # type: ignore
             post_run_duration: float = self.STATE.post_run_duration.value # type: ignore
             multiclass: bool = self.STATE.multiclass.value # type: ignore
-            rotation: bool = self.STATE.rotation.value # type: ignore
+            #rotation: bool = self.STATE.rotation.value # type: ignore
+            stimulus_type: str = self.STATE.stimulus_type.value # type: ignore
 
             # Create trial order (blockwise randomized)
             trials: typing.List[str] = []
@@ -210,15 +214,34 @@ class SSVEPTaskImplementation(TaskImplementation):
                 self.STATE.output_class.put_nowait(None)
                 await asyncio.sleep(iti)
 
-                stimuli = [
-                    (VisualMotionStimulus if rotation else SSVEPStimulus)(
+                stimuli = []
+                if(stimulus_type == 'Checkerboard'):
+                    stimuli = [SSVEPStimulus(
                         period_ms = self.STATE.period_dict[c], 
                         width = stimulus_size, 
                         height = stimulus_size,
                         presented = False,
                         border = 3 if c == trial_class else 0,
-                    ) for c in classes
-                ]
+                        ) for c in classes
+                    ]
+                elif (stimulus_type == 'Visual Motion'):
+                    stimuli = [VisualMotionStimulus(
+                        period_ms = self.STATE.period_dict[c], 
+                        width = stimulus_size, 
+                        height = stimulus_size,
+                        presented = False,
+                        border = 3 if c == trial_class else 0,
+                        ) for c in classes
+                    ]
+                elif(stimulus_type == 'Intermodulation'):
+                   stimuli = [IntermodulationSSVEP(
+                        period_ms = self.STATE.period_dict[c], 
+                        width = stimulus_size, 
+                        height = stimulus_size,
+                        presented = False,
+                        border = 3 if c == trial_class else 0,
+                        ) for c in classes
+                    ] 
 
                 target_stim = next(s for s in stimuli if s.period_ms == self.STATE.period_dict[trial_class])
 
