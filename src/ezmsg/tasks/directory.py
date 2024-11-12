@@ -96,7 +96,7 @@ class TaskDirectory(ez.Collection, TabbedApp):
         return network
     
 
-if __name__ == '__main__':
+def main() -> None:
 
     import argparse
 
@@ -188,3 +188,6 @@ if __name__ == '__main__':
             (freq_map.OUTPUT_FREQUENCY, injector.INPUT_FREQUENCY)
         )
     )
+
+if __name__ == '__main__':
+    main()
