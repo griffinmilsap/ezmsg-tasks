@@ -250,7 +250,7 @@ class SSAEPTaskImplementation(TaskImplementation):
                 self.STATE.audio.muted = False
                 self.STATE.output_class.put_nowait(trial_class)
                 yield SSAEPSampleTriggerMessage(
-                    period = (0.0, trial_dur), 
+                    period = (-iti_min, trial_dur), 
                     value = trial_class,
                     freqs = freqs,
                     target = target_map[trial_class]

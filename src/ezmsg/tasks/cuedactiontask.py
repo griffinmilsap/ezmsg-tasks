@@ -220,7 +220,7 @@ class CuedActionTaskImplementation(TaskImplementation):
                 self.STATE.stimulus.value = trial_class
                 self.STATE.output_class.put_nowait(trial_class)
                 yield SampleTriggerMessage(
-                    period = (0.0, trial_dur), 
+                    period = (-iti_min, trial_dur), 
                     value = trial_class
                 )
                 await asyncio.sleep(trial_dur)
