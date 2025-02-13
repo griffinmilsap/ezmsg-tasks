@@ -6,6 +6,7 @@ class CanvasStimulus(ReactiveHTML):
 
     border = param.Integer(default = 0)
     presented = param.Boolean(default = True)
+    period_ms = param.Integer(default = 120)
 
     _template = """
     <canvas 
@@ -19,7 +20,6 @@ class CanvasStimulus(ReactiveHTML):
 
 class SSVEPStimulus(CanvasStimulus):
 
-    period_ms = param.Integer(default = 120)
     angular_freq = param.Number(default = 40.0)
     radial_freq = param.Number(default = 10.0)
     radial_exp = param.Number(default = 0.5)
@@ -104,8 +104,7 @@ class SSVEPStimulus(CanvasStimulus):
 class VisualMotionStimulus(CanvasStimulus):
 
     # For compatibility with SSVEPStimulus where period_ms represents single reversal period
-    # this actually refers to the half-rotation period
-    period_ms = param.Integer(default = 120)
+    # period_ms actually refers to the half-rotation period
 
     _scripts = {
         "render": """
@@ -144,12 +143,11 @@ class VisualMotionStimulus(CanvasStimulus):
         """,
     }
 
-class IntermodulationSSVEP(CanvasStimulus):
+class SimpleSSVEP(CanvasStimulus):
 
     # For compatibility with SSVEPStimulus where period_ms represents single reversal period
-    # this actually refers to the half-rotation period
-    period_ms = param.Integer(default = 70)
-    period_ms_2 = param.Integer(default = 90)
+    # period_ms and intermod_ms actually refers to a half-period
+    intermod_ms = param.Integer(default = 0)
 
     _scripts = {
         "render": """
@@ -165,9 +163,9 @@ class IntermodulationSSVEP(CanvasStimulus):
 
                 const date = new Date();
                 t = date.getTime() / 1000;
-                w1 = 2 * Math.PI * 1000 / (2.0 * data.period_ms) * t;
-                w2 = 2 * Math.PI * 1000 / (2.0 * data.period_ms_2) * t;
-                v = (Math.cos(w1) + Math.cos(w2))/2;
+                v = Math.cos(2 * Math.PI * 1000 / (2.0 * data.period_ms) * t);
+                if(data.intermod_ms)
+                    v = (v + Math.cos(2 * Math.PI * 1000 / (2.0 * data.intermod_ms) * t)) / 2;
                 rotation = 0; // pixels
                 start_angle = 0; // radians
                 end_angle = 2 * Math.PI; // radians
