@@ -31,9 +31,9 @@ class AsyncButton(pn.widgets.Button):
         await self._aio_event.wait()
 
 
-DIRECTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT']   
 
 class ReactionTaskImplementationState(TaskImplementationState):
+    directions: typing.List[str]
     task_area: pn.layout.Card
     button: AsyncButton
     pre_run_duration: pn.widgets.FloatInput
@@ -41,6 +41,7 @@ class ReactionTaskImplementationState(TaskImplementationState):
     trials_per_class: pn.widgets.IntInput
 
     center_out: pn.widgets.Checkbox
+    centerout_direction_mode: pn.widgets.MenuButton
     timeout: pn.widgets.FloatInput
     intertrial_min_dur: pn.widgets.FloatInput
     intertrial_max_dur: pn.widgets.FloatInput
@@ -69,6 +70,7 @@ class ReactionTaskImplementation(TaskImplementation):
     
     async def initialize(self) -> None:
         await super().initialize()
+        self.STATE.directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']   
 
         self.STATE.button = AsyncButton(
             # name = 'center',
@@ -88,7 +90,7 @@ class ReactionTaskImplementation(TaskImplementation):
                 disabled = True, 
                 align = ('center', 'center')
             ) 
-            for direction in DIRECTIONS
+            for direction in self.STATE.directions
         }
 
         UP = self.STATE.direction_button['UP']
@@ -121,7 +123,8 @@ class ReactionTaskImplementation(TaskImplementation):
 
         sw = dict(sizing_mode = 'stretch_width')
 
-        self.STATE.center_out = pn.widgets.Checkbox(name = 'Center Out', value = False, **sw)
+        self.STATE.center_out = pn.widgets.Checkbox(name = 'Center Out', value = False, align='center', **sw)
+        self.STATE.centerout_direction_mode = pn.widgets.MenuButton(name='Center Out Class', items=['2-Direction', '4-Direction'], button_type='primary', visible=False)
         self.STATE.decode_class = pn.widgets.TextInput(name = 'Decode Class', placeholder = 'GO', **sw)
         self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Num Trials', value = 5, start = 1, **sw)
         self.STATE.pre_run_duration = pn.widgets.FloatInput(name = 'Pre-run (sec)', value = 3, start = 0, **sw)
@@ -130,6 +133,27 @@ class ReactionTaskImplementation(TaskImplementation):
         self.STATE.timeout = pn.widgets.FloatInput(name = 'Trial Timeout (sec)', value = 4.0, step = 0.1, start = 0.1, end = self.SETTINGS.buffer_dur, **sw)
         self.STATE.intertrial_min_dur = pn.widgets.FloatInput(name = 'ITI Min (sec)', value = 1.0, start = 0, step = 0.1, **sw)
         self.STATE.intertrial_max_dur = pn.widgets.FloatInput(name = 'ITI Max (sec)', value = 2.0, start = self.STATE.intertrial_min_dur.param.value, step = 0.1, **sw)
+
+        async def centerout_callback(event):
+            if(event.new):
+                self.STATE.centerout_direction_mode.visible = True
+            else:
+                self.STATE.centerout_direction_mode.visible = False
+                self.STATE.directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']   
+                self.STATE.direction_button['UP'].visible = True
+                self.STATE.direction_button['DOWN'].visible = True
+        self.STATE.center_out.param.watch(centerout_callback, 'value')
+
+        async def centerout_direction_mode_callback(event):
+            if(event.obj.clicked == '2-Direction'):
+                self.STATE.directions = ['LEFT', 'RIGHT']
+                self.STATE.direction_button['UP'].visible = False
+                self.STATE.direction_button['DOWN'].visible = False
+            elif(event.obj.clicked == '4-Direction'):
+                self.STATE.directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']   
+                self.STATE.direction_button['UP'].visible = True
+                self.STATE.direction_button['DOWN'].visible = True
+        self.STATE.centerout_direction_mode.param.watch(centerout_direction_mode_callback, 'clicked')
 
         @pn.depends(
                 self.STATE.trials_per_class,
@@ -149,7 +173,7 @@ class ReactionTaskImplementation(TaskImplementation):
             pre_run: float,
             post_run: float
         ):
-            n_classes = len(DIRECTIONS) if center_out else 1
+            n_classes = len(self.STATE.directions) if center_out else 1
             avg_iti = iti_min + (iti_max - iti_min) / 2
             run_len = (avg_iti + timeout) * trials_per_class * n_classes
             run_len = pre_run + run_len + post_run
@@ -160,7 +184,10 @@ class ReactionTaskImplementation(TaskImplementation):
         self.STATE.trials_per_class.param.update(value = 10)
 
         self.STATE.task_controls = pn.WidgetBox(
-            self.STATE.center_out,
+            pn.Row(
+                self.STATE.center_out,
+                self.STATE.centerout_direction_mode
+            ),
             pn.Row(
                 self.STATE.trials_per_class,
                 self.STATE.timeout,
@@ -200,7 +227,7 @@ class ReactionTaskImplementation(TaskImplementation):
             post_run_duration: float = float(self.STATE.post_run_duration.value) # type: ignore
             center_out: bool = bool(self.STATE.center_out.value) # type: ignore
 
-            classes = DIRECTIONS if center_out else ['CENTER']
+            classes = self.STATE.directions if center_out else ['CENTER']
 
             # Create trial order (blockwise randomized)
             trials: typing.List[str] = []
@@ -226,16 +253,20 @@ class ReactionTaskImplementation(TaskImplementation):
 
                 self.STATE.status.value = f'{trial_id}: {trial_class}'
 
-                start_time = time.time()
+                start_time = 0
 
                 timeout = False
                 try:
-                    await asyncio.wait_for(
-                        self.center_trial() 
-                        if trial_class == 'CENTER'
-                        else self.direction_trial(trial_class), 
-                        timeout = timeout_sec
-                    )
+                    if trial_class == 'CENTER':
+                        start_time = time.time()
+                        await asyncio.wait_for(self.center_trial())
+                    else:
+                        await self.direction_trial_start()
+                        start_time = time.time()
+                        await asyncio.wait_for(
+                            self.direction_trial(trial_class), 
+                            timeout = timeout_sec
+                        )
                 except asyncio.TimeoutError:
                     timeout = True
 
@@ -271,24 +302,24 @@ class ReactionTaskImplementation(TaskImplementation):
         finally:
             self.STATE.button.disabled = True
 
-    async def direction_trial(self, direction: str) -> None:
-        """ A direction class can only be completed using button clicks"""
-        direction_button = self.STATE.direction_button[direction]
+    async def direction_trial_start(self) -> None:
         try:
             self.STATE.button.disabled = False
             await self.STATE.button.wait()
             await asyncio.sleep(0.1) # working around race condition in panel
             self.STATE.button.disabled = True
 
+        except asyncio.CancelledError:
+            ez.logger.debug('trial cancelled')
+
+    async def direction_trial(self, direction: str) -> None:
+        """ A direction class can only be completed using button clicks"""
+        direction_button = self.STATE.direction_button[direction]
+        try:
             direction_button.disabled = False
             await direction_button.wait()
             await asyncio.sleep(0.1) # working around race condition in panel
             direction_button.disabled = True
-
-            self.STATE.button.disabled = False
-            await self.STATE.button.wait()
-            await asyncio.sleep(0.1) # working around race condition in panel
-            self.STATE.button.disabled = True
 
         except asyncio.CancelledError:
             ez.logger.debug('trial cancelled')
