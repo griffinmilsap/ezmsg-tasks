@@ -53,8 +53,10 @@ class SSVEPStimulus(CanvasStimulus):
         """,
 
         "design_stimulus": """
-            state.width = stimulus_el.width;
-            state.height = stimulus_el.height;
+            stimulus_el.width = model.width;
+            stimulus_el.height = model.height;
+            state.width = model.width;
+            state.height = model.height;
             state.ctx.clearRect(0, 0, state.width, state.height);
 
             // Assumption: state.id_a.data and state.id_b.data have the same length
@@ -93,6 +95,11 @@ class SSVEPStimulus(CanvasStimulus):
         """,
 
         "draw": """
+            if (data.period_ms != state.period || state.width != stimulus_el.width || state.height != stimulus_el.height){
+                self.reschedule();
+                self.design_stimulus();
+            }
+
             state.ctx.clearRect(0, 0, state.width, state.height);
             if(data.presented) {
                 state.ctx.putImageData(state.reverse ? state.id_a : state.id_b, 0, 0);
