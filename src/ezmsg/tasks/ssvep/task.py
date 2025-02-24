@@ -2,12 +2,15 @@ import typing
 import asyncio
 import datetime
 import random
+import enum
 
 from dataclasses import dataclass, field
 
 import ezmsg.core as ez
 import panel as pn
 import numpy as np
+
+from param.parameterized import Event
 
 from ezmsg.sigproc.sampler import SampleTriggerMessage
 
@@ -18,17 +21,53 @@ from ..task import (
     TaskImplementationState,
 )
 
-from .dynamicclasses import DynamicClasses
-from .stimulus import CanvasStimulus, SSVEPStimulus, VisualMotionStimulus, SimpleSSVEP
+from .stimulus import CanvasStimulus, SSVEPStimulus
 from ..frequencydecodemessage import FrequencyDecodeMessage
+
+class StimulusDirection(enum.Enum):
+    CENTER = "CENTER"
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+    TOP = "TOP"
+    BOTTOM = "BOTTOM"
 
 STIMULUS_KWARGS = dict(width = 300, height = 200)
 
-STIMULUS_CLASSES: typing.Dict[str, typing.Type[CanvasStimulus]] = {
-    'Checkerboard': SSVEPStimulus,
-    'Visual Motion': VisualMotionStimulus,
-    'Simple': SimpleSSVEP
-}
+class PeriodEntry(pn.widgets.IntInput):
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        def update_freq(e: Event) -> None:
+            rate_str = 'OFF' if e.new == 0 else f'{1000/e.new:.02f} Hz'
+            self.name = f'{rate_str}'
+        self.param.watch(update_freq, 'value')
+        self.param.trigger('value')
+
+
+class Stimulus:
+    size_widget: pn.widgets.IntInput
+    period_control: PeriodEntry
+    stim: CanvasStimulus
+
+    def __init__(self, size_widget: pn.widgets.IntInput, type: typing.Type[CanvasStimulus] = SSVEPStimulus) -> None:
+        self.size_widget = size_widget
+        self.period_control = PeriodEntry(start = 0, sizing_mode = 'stretch_width')
+        self.stim = type(presented = False)
+
+        @pn.depends(self.size_widget, self.period_control, watch = True)
+        def update_stim(size: int, period: int):
+            if period == 0:
+                self.stim.presented = False
+            else:
+                self.stim.presented = True
+                self.stim.period_ms = period
+            self.stim.width = size
+            self.stim.height = size
+
+        self.period_control.param.trigger('value')
+
+
 
 @dataclass
 class SSVEPSampleTriggerMessage(SampleTriggerMessage):
@@ -40,12 +79,10 @@ class SSVEPSampleTriggerMessage(SampleTriggerMessage):
         return [1000.0 / p for p in self.reversal_period_ms]
 
 class SSVEPTaskImplementationState(TaskImplementationState):
-    stimulus: pn.layout.Row
     task_area: pn.layout.Card
 
-    classes: DynamicClasses
+    stimuli: typing.Dict[StimulusDirection, Stimulus]
     multiclass: pn.widgets.Checkbox
-    stimulus_type: pn.widgets.Select
     stimulus_size: pn.widgets.IntInput
 
     feedback: pn.widgets.Checkbox
@@ -81,25 +118,45 @@ class SSVEPTaskImplementation(TaskImplementation):
 
         sw = dict(sizing_mode = 'stretch_width')
 
-        self.STATE.stimulus = pn.layout.Row(**sw)
+        self.STATE.stimulus_size = pn.widgets.IntInput(name = 'Stimulus Size (pixels)', value = 200, start = 10, **sw)
+
+        self.STATE.stimuli = {dir: Stimulus(self.STATE.stimulus_size) for dir in StimulusDirection}
+
         self.STATE.task_area = pn.Card(
             pn.Column(
                 pn.layout.VSpacer(),
-                self.STATE.stimulus,
+                pn.Row(
+                    pn.layout.HSpacer(),
+                    self.STATE.stimuli[StimulusDirection.TOP].stim,
+                    pn.layout.HSpacer(),
+                ),
                 pn.layout.VSpacer(),
-                min_height = 700
+                pn.Row(
+                    pn.layout.HSpacer(),
+                    self.STATE.stimuli[StimulusDirection.LEFT].stim,
+                    pn.layout.HSpacer(),
+                    self.STATE.stimuli[StimulusDirection.CENTER].stim, 
+                    pn.layout.HSpacer(),
+                    self.STATE.stimuli[StimulusDirection.RIGHT].stim, 
+                    pn.layout.HSpacer()
+                ),
+                pn.layout.VSpacer(),
+                pn.Row(
+                    pn.layout.HSpacer(),
+                    self.STATE.stimuli[StimulusDirection.BOTTOM].stim,
+                    pn.layout.HSpacer(),
+                ),
+                pn.layout.VSpacer(),
+                min_height = 600,
             ),
             styles = {'background': '#808080'},
             hide_header = True,
             sizing_mode = 'stretch_both'
         )
 
-        self.STATE.classes = DynamicClasses(**sw)
         self.STATE.multiclass = pn.widgets.Checkbox(name = 'Multiclass Presentation', value = True, **sw)
-        self.STATE.stimulus_type = pn.widgets.Select(name = 'Stimulus Type', options = list(STIMULUS_CLASSES.keys()))
-        self.STATE.stimulus_size = pn.widgets.IntInput(name = 'Stimulus Size (pixels)', value = 200, start = 10, **sw)
 
-        self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Trials per-class', value = 2, start = 1, **sw)
+        self.STATE.trials_per_class = pn.widgets.IntInput(name = 'Trials per-class', value = 10, start = 1, **sw)
         self.STATE.feedback = pn.widgets.Checkbox(name = 'Display Feedback', value = False, **sw)
         self.STATE.pre_run_duration = pn.widgets.FloatInput(name = 'Pre-run (sec)', value = 3, start = 0, **sw)
         self.STATE.post_run_duration = pn.widgets.FloatInput(name = 'Post-run (sec)', value = 3, start = 0, **sw)
@@ -109,24 +166,24 @@ class SSVEPTaskImplementation(TaskImplementation):
         self.STATE.intertrial_max_dur = pn.widgets.FloatInput(name = 'ITI Max (sec)', value = 2.0, start = self.STATE.intertrial_min_dur.param.value, step = 0.1, **sw)
 
         @pn.depends(
-                self.STATE.classes.classes.param.params()['objects'],
                 self.STATE.trials_per_class, 
                 self.STATE.trial_duration,
                 self.STATE.intertrial_min_dur,
                 self.STATE.intertrial_max_dur,
                 self.STATE.pre_run_duration,
                 self.STATE.post_run_duration,
+                *[s.period_control for s in self.STATE.stimuli.values()],
                 watch = True )
         def update_run_calc(
-            classes: typing.List[typing.Any],
             trials_per_class: int,
             trial_dur: float,
             iti_min: float,
             iti_max: float,
             pre_run: float,
-            post_run: float
+            post_run: float,
+            *periods,
         ):
-            num_classes = len(classes)
+            num_classes = sum([per != 0 for per in periods])
 
             n_trials = num_classes * trials_per_class
             avg_iti = iti_min + (iti_max - iti_min) / 2
@@ -136,13 +193,27 @@ class SSVEPTaskImplementation(TaskImplementation):
             self.STATE.run_info.value = f'{num_classes} class(es), {n_trials} trial(s), ~{run_dur}'
 
         # This is done here to kick the calculation for run_calc
-        self.STATE.trials_per_class.param.update(value = 10)
+        self.STATE.trials_per_class.param.trigger('value')
 
         self.STATE.task_controls = pn.WidgetBox(
-            self.STATE.stimulus_type,
-            self.STATE.classes,
+
             self.STATE.multiclass,
             self.STATE.feedback,
+            pn.WidgetBox(
+                pn.widgets.StaticText(name = 'Reversal Periods (ms)'),
+                pn.layout.GridBox(
+                    None, 
+                    self.STATE.stimuli[StimulusDirection.TOP].period_control,     
+                    None, 
+                    self.STATE.stimuli[StimulusDirection.LEFT].period_control, 
+                    self.STATE.stimuli[StimulusDirection.CENTER].period_control, 
+                    self.STATE.stimuli[StimulusDirection.RIGHT].period_control, 
+                    None, 
+                    self.STATE.stimuli[StimulusDirection.BOTTOM].period_control,
+                    None, 
+                    ncols = 3, nrows = 3, sizing_mode = 'stretch_width'
+                ),
+            ),
             self.STATE.stimulus_size,
             pn.Row(
                 self.STATE.trials_per_class,
@@ -178,7 +249,6 @@ class SSVEPTaskImplementation(TaskImplementation):
 
         try:
             # Grab all widget values so they can't be changed during run
-            stimulus_size: int = self.STATE.stimulus_size.value # type: ignore
             trials_per_class: int = self.STATE.trials_per_class.value # type: ignore
             trial_dur: float = self.STATE.trial_duration.value # type: ignore
             feedback: bool = self.STATE.feedback.value # type: ignore
@@ -187,25 +257,14 @@ class SSVEPTaskImplementation(TaskImplementation):
             pre_run_duration: float = self.STATE.pre_run_duration.value # type: ignore
             post_run_duration: float = self.STATE.post_run_duration.value # type: ignore
             multiclass: bool = self.STATE.multiclass.value # type: ignore
-            stimulus_type: str = self.STATE.stimulus_type.value # type: ignore
 
-            class_periods = self.STATE.classes.setting
-            class_indices = list(range(len(class_periods)))
-            class_stimuli = {
-                idx: STIMULUS_CLASSES[stimulus_type](
-                    period_ms = per, 
-                    width = stimulus_size, 
-                    height = stimulus_size,
-                    presented = False,
-                    border = 0,
-                ) for idx, per in zip(class_indices, class_periods)
-            }
+            stimuli = [s.stim for s in self.STATE.stimuli.values() if s.period_control.value != 0]
+            class_periods: typing.List[int] = [s.period_ms for s in stimuli] # type: ignore
+            class_indices = list(range(len(stimuli)))
 
-            self.STATE.stimulus.clear()
-            elements: typing.List[pn.viewable.Viewable] = [pn.layout.HSpacer()]
-            for stimulus in class_stimuli.values():
-                elements.extend([stimulus, pn.layout.HSpacer()])
-            self.STATE.stimulus.extend(elements)
+            for stim in stimuli:
+                stim.presented = False
+                stim.border = 0
 
             # Create trial order (blockwise randomized)
             trials: typing.List[int] = []
@@ -232,14 +291,15 @@ class SSVEPTaskImplementation(TaskImplementation):
                 await asyncio.sleep(iti)
 
                 # Present focus cue
-                class_stimuli[trial_class_idx].border = 3
+                stimuli[trial_class_idx].border = 3
                 await asyncio.sleep(1.0)
 
                 # Present stimuli
-                for idx, stim in class_stimuli.items():
-                    stim.presented = True if multiclass else trial_class_idx == idx
+                for i, s in enumerate(stimuli):
+                    s.presented = True if multiclass else trial_class_idx == i
 
-                self.STATE.status.value = f'{trial_id}: Action ({1000/class_periods[trial_class_idx]:.02f})'
+                freq: float = 1000 / stimuli[trial_class_idx].period_ms # type: ignore
+                self.STATE.status.value = f'{trial_id}: Action ({freq:.02f})'
                 self.STATE.output_class.put_nowait(str(trial_class_idx))
                 yield SSVEPSampleTriggerMessage(
                     period = (0.0, trial_dur), 
@@ -249,7 +309,7 @@ class SSVEPTaskImplementation(TaskImplementation):
                 )
                 await asyncio.sleep(trial_dur)
 
-                for stim in class_stimuli.values():
+                for stim in stimuli:
                     stim.presented = False
                     stim.border = 0
 
@@ -264,7 +324,7 @@ class SSVEPTaskImplementation(TaskImplementation):
                         correct = focus_per == class_periods[trial_class_idx]
                         ez.logger.info(f'{trial_class_idx=}, {decode=}, {correct=}')
 
-                        for stim in class_stimuli.values():
+                        for stim in stimuli:
                             if stim.period_ms == focus_per:
                                 stim.border = 3
 
@@ -272,21 +332,24 @@ class SSVEPTaskImplementation(TaskImplementation):
                     except asyncio.TimeoutError:
                         ez.logger.info('Feedback requested, but no decode received')
 
-                    for stim in class_stimuli.values():
+                    for stim in stimuli:
                         stim.presented = False
                         stim.border = 0
                 
                 self.STATE.progress.value = trial_idx + 1
 
             self.STATE.status.value = 'Post Run'
-            self.STATE.stimulus.clear()
             self.STATE.output_class.put_nowait(None)
             await asyncio.sleep(post_run_duration)
 
             raise TaskComplete
 
         finally:
-            self.STATE.stimulus.clear()
+
+            for stim in stimuli:
+                stim.presented = True
+                stim.border = 0
+
             self.STATE.task_controls.disabled = False
     
     def content(self) -> pn.viewable.Viewable:
