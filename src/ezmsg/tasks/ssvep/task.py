@@ -28,8 +28,6 @@ class StimulusDirection(enum.Enum):
     CENTER = "CENTER"
     LEFT = "LEFT"
     RIGHT = "RIGHT"
-    TOP = "TOP"
-    BOTTOM = "BOTTOM"
 
 STIMULUS_KWARGS = dict(width = 300, height = 200)
 
@@ -127,24 +125,12 @@ class SSVEPTaskImplementation(TaskImplementation):
                 pn.layout.VSpacer(),
                 pn.Row(
                     pn.layout.HSpacer(),
-                    self.STATE.stimuli[StimulusDirection.TOP].stim,
-                    pn.layout.HSpacer(),
-                ),
-                pn.layout.VSpacer(),
-                pn.Row(
-                    pn.layout.HSpacer(),
                     self.STATE.stimuli[StimulusDirection.LEFT].stim,
                     pn.layout.HSpacer(),
                     self.STATE.stimuli[StimulusDirection.CENTER].stim, 
                     pn.layout.HSpacer(),
                     self.STATE.stimuli[StimulusDirection.RIGHT].stim, 
                     pn.layout.HSpacer()
-                ),
-                pn.layout.VSpacer(),
-                pn.Row(
-                    pn.layout.HSpacer(),
-                    self.STATE.stimuli[StimulusDirection.BOTTOM].stim,
-                    pn.layout.HSpacer(),
                 ),
                 pn.layout.VSpacer(),
                 min_height = 600,
@@ -199,20 +185,11 @@ class SSVEPTaskImplementation(TaskImplementation):
 
             self.STATE.multiclass,
             self.STATE.feedback,
-            pn.WidgetBox(
-                pn.widgets.StaticText(name = 'Reversal Periods (ms)'),
-                pn.layout.GridBox(
-                    None, 
-                    self.STATE.stimuli[StimulusDirection.TOP].period_control,     
-                    None, 
-                    self.STATE.stimuli[StimulusDirection.LEFT].period_control, 
-                    self.STATE.stimuli[StimulusDirection.CENTER].period_control, 
-                    self.STATE.stimuli[StimulusDirection.RIGHT].period_control, 
-                    None, 
-                    self.STATE.stimuli[StimulusDirection.BOTTOM].period_control,
-                    None, 
-                    ncols = 3, nrows = 3, sizing_mode = 'stretch_width'
-                ),
+            pn.widgets.StaticText(name = 'Reversal Periods (ms)'),
+            pn.Row(
+                self.STATE.stimuli[StimulusDirection.LEFT].period_control, 
+                self.STATE.stimuli[StimulusDirection.CENTER].period_control, 
+                self.STATE.stimuli[StimulusDirection.RIGHT].period_control, 
             ),
             self.STATE.stimulus_size,
             pn.Row(
